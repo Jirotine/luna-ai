@@ -8,12 +8,10 @@ let user = null, currentChatId = crypto.randomUUID(), isFirstMessage = true, las
 function getStoreKey() { return `LUNA_GROQ_KEY_${user.id}`; }
 function getStoredApiKey() { return localStorage.getItem(getStoreKey()); }
 
-// Logic to update the Status Badge
 function updateKeyStatusBadge() {
     const key = getStoredApiKey();
     const dot = document.getElementById('status-dot');
     const text = document.getElementById('status-text');
-    
     if (key && key.startsWith('gsk_')) {
         dot.style.background = "var(--success)";
         text.style.color = "var(--success)";
@@ -31,7 +29,7 @@ function openKeyModal() {
         const newKey = document.getElementById('api-key-input').value.trim();
         if(newKey.startsWith("gsk_")) {
             localStorage.setItem(getStoreKey(), newKey);
-            updateKeyStatusBadge(); // Update badge UI
+            updateKeyStatusBadge(); 
             notify("Key saved successfully!");
         } else {
             notify("Invalid Groq key format.");
@@ -43,7 +41,7 @@ function openKeyModal() {
     `;
 }
 
-// --- RESPONSIVE & UI ---
+// --- UI HELPERS ---
 function toggleSidebarMenu() { document.getElementById('sidebar').classList.toggle('open'); }
 function closeSidebarOnMobile() { document.getElementById('sidebar').classList.remove('open'); }
 function notify(msg) {
@@ -80,7 +78,7 @@ function initApp(u) {
     document.querySelectorAll('.auth-page').forEach(p => p.classList.add('hidden'));
     document.getElementById('sidebar').classList.remove('hidden');
     document.getElementById('main').classList.remove('hidden');
-    updateKeyStatusBadge(); // Initialize badge on login
+    updateKeyStatusBadge(); 
     lucide.createIcons();
     refreshHistory();
     renderMsg("I am **Luna**, intelligence that shines.", 'bot');
@@ -91,7 +89,7 @@ function confirmSignOut() {
     });
 }
 
-// --- CORE CHAT ---
+// --- CORE CHAT LOGIC ---
 async function chat(isRegenerating = false) {
     const apiKey = getStoredApiKey();
     if(!apiKey) { openKeyModal(); return; }
@@ -100,9 +98,36 @@ async function chat(isRegenerating = false) {
     const text = isRegenerating ? lastUserMessage : input.value;
     if(!text) return;
 
-    if(!isRegenerating) { lastUserMessage = text; renderMsg(text, 'user'); input.value = ''; }
+    if(!isRegenerating) { 
+        lastUserMessage = text; 
+        renderMsg(text, 'user'); 
+        input.value = ''; 
+        
+        // SAVE USER MESSAGE TO DB (Fixes history disappearing)
+        await sb.from('chat_history').insert([{ 
+            user_id: user.id, 
+            chat_id: currentChatId, 
+            message: text, 
+            sender: 'user' 
+        }]);
+    }
     
     if (isFirstMessage && !isRegenerating) generateChatTitle(text, apiKey);
+
+    // CUSTOM LOGIC: LUIS RESPONSE
+    const lowerText = text.toLowerCase().trim();
+    if (lowerText.includes("luis loves who")) {
+        const customRes = "His Luna - TINETINE!";
+        renderMsg(customRes, 'bot');
+        await sb.from('chat_history').insert([{ 
+            user_id: user.id, 
+            chat_id: currentChatId, 
+            message: customRes, 
+            sender: 'bot' 
+        }]);
+        refreshHistory();
+        return; 
+    }
 
     try {
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -122,12 +147,25 @@ async function chat(isRegenerating = false) {
         refreshHistory();
     } catch(e) { 
         notify("API Error: " + e.message);
-        if(e.message.includes("API key")) openKeyModal();
     }
 }
 
 async function generateChatTitle(userPrompt, apiKey) {
     isFirstMessage = false;
+
+    // CUSTOM TITLE LOGIC: Matches sidebar title with custom response
+    const lowerPrompt = userPrompt.toLowerCase().trim();
+    if (lowerPrompt.includes("luis loves who")) {
+        await sb.from('chat_history').insert([{ 
+            user_id: user.id, 
+            chat_id: currentChatId, 
+            message: `🌙 LUIS LOVES TINETINE`, 
+            sender: 'user' 
+        }]);
+        refreshHistory();
+        return; 
+    }
+
     try {
         const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
             method: "POST",
@@ -148,7 +186,7 @@ function renderMsg(txt, sender) {
     const div = document.createElement('div');
     div.className = `msg-row ${sender}`;
     const content = sender === 'bot' ? marked.parse(txt) : txt;
-    let actions = sender === 'bot' ? `<div class="bot-actions"><button class="action-btn" onclick="copyText(this, \`${txt.replace(/`/g, '\\`')}\`)"><i data-lucide="copy" size="14"></i> Copy</button><button class="action-btn" onclick="chat(true)"><i data-lucide="refresh-cw" size="14"></i> Regenerate</button></div>` : '';
+    let actions = sender === 'bot' ? `<div class="bot-actions"><button class="action-btn" onclick="copyText(this, \`${txt.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)"><i data-lucide="copy" size="14"></i> Copy</button><button class="action-btn" onclick="chat(true)"><i data-lucide="refresh-cw" size="14"></i> Regenerate</button></div>` : '';
     div.innerHTML = `<div class="bubble">${content}</div>${actions}`;
     document.getElementById('messages').appendChild(div);
     document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
@@ -182,7 +220,12 @@ async function loadSession(id) {
     currentChatId = id; isFirstMessage = false;
     document.getElementById('messages').innerHTML = '';
     const { data } = await sb.from('chat_history').select('*').eq('chat_id', id).order('created_at', { ascending: true });
-    data?.forEach(m => renderMsg(m.message, m.sender));
+    data?.forEach(m => {
+        // Skip rendering the title row in the chat area
+        if (!m.message.startsWith('🌙 ')) {
+            renderMsg(m.message, m.sender);
+        }
+    });
 }
 
 function confirmDel(e, id) {
@@ -196,11 +239,9 @@ function confirmDel(e, id) {
 function startNewSession() {
     currentChatId = crypto.randomUUID(); isFirstMessage = true;
     document.getElementById('messages').innerHTML = '';
-    renderMsg("A new session begins in the moonlight.", 'bot');
+    renderMsg("A new session begins.", 'bot');
 }
 
 function toggleTheme() { document.body.classList.toggle('light-mode'); lucide.createIcons(); }
 function v(id) { return document.getElementById(id).value; }
-
-// Initialize Lucide icons on load
 lucide.createIcons();
