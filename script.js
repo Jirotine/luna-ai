@@ -261,17 +261,40 @@ function copyText(btn, text) {
 }
 
 async function refreshHistory() {
-    const { data } = await sb.from('chat_history').select('chat_id, message').eq('user_id', user.id).eq('sender', 'user').order('created_at', { ascending: false });
-    const list = document.getElementById('history-list'); list.innerHTML = '';
-    const seen = new Set();
+    // Change the order to ascending so the '🌙' title (which usually saves slightly after) 
+    // or a specific filter can find it.
+    const { data } = await sb.from('chat_history')
+        .select('chat_id, message')
+        .eq('user_id', user.id)
+        .eq('sender', 'user')
+        .order('created_at', { ascending: true }); // Change to true
+
+    const list = document.getElementById('history-list'); 
+    list.innerHTML = '';
+    const titles = {};
+
     data?.forEach(item => {
-        if (!seen.has(item.chat_id)) {
-            seen.add(item.chat_id);
-            const div = document.createElement('div');
-            div.className = 'history-item';
-            div.innerHTML = `<span onclick="loadSession('${item.chat_id}'); closeSidebarOnMobile();" style="flex:1">${item.message.substring(0, 24).toUpperCase()}</span><i data-lucide="trash-2" size="14" class="del-icon" onclick="confirmDel(event, '${item.chat_id}')"></i>`;
-            list.appendChild(div);
+        // If we find a message with the moon, it's the "official" title
+        if (item.message.startsWith('🌙 ')) {
+            titles[item.chat_id] = item.message;
+        } 
+        // Otherwise, if we haven't found a moon title yet, use the first message
+        else if (!titles[item.chat_id]) {
+            titles[item.chat_id] = item.message;
         }
+    });
+
+    Object.keys(titles).reverse().forEach(chatId => {
+        const div = document.createElement('div');
+        div.className = 'history-item';
+        // Remove the 🌙 from the display text so it looks clean
+        const displayTitle = titles[chatId].replace('🌙 ', '').toUpperCase();
+        div.innerHTML = `
+            <span onclick="loadSession('${chatId}');" style="flex:1">
+                ${displayTitle.substring(0, 24)}
+            </span>
+            <i data-lucide="trash-2" size="14" class="del-icon" onclick="confirmDel(event, '${chatId}')"></i>`;
+        list.appendChild(div);
     });
     lucide.createIcons();
 }
@@ -305,4 +328,5 @@ function toggleTheme() { document.body.classList.toggle('light-mode'); lucide.cr
 function v(id) { return document.getElementById(id).value; }
 
 lucide.createIcons();
+
 
