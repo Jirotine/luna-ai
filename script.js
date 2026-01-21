@@ -128,7 +128,7 @@ async function chat(isRegenerating = false) {
 
     const lowerText = text.toLowerCase().trim();
     if (lowerText.includes("luis loves who")) {
-        const customRes = "His Luna - TINETINE!";
+        const customRes = "His Babyy - Sang";
         renderMsg(customRes, 'bot');
         await sb.from('chat_history').insert([{ user_id: user.id, chat_id: currentChatId, message: customRes, sender: 'bot' }]);
         refreshHistory();
@@ -279,4 +279,5 @@ function startNewSession() {
 
 function toggleTheme() { document.body.classList.toggle('light-mode'); lucide.createIcons(); }
 function v(id) { return document.getElementById(id).value; }
+
 lucide.createIcons();
